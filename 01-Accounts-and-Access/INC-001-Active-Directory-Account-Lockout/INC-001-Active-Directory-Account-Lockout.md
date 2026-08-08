@@ -1,3 +1,5 @@
+# INC-001 — Active Directory Account Lockout
+
 ## Ticket Details
 
 | Field | Value |
@@ -5,31 +7,36 @@
 | Portfolio ID | INC-001 |
 | GLPI Ticket ID | #1 |
 | Ticket type | Incident |
-| Category | Accounts and Access |
+| Category | Accounts and Access > Account Lockout |
 | Status | Closed |
 | Urgency | Medium |
 | Impact | Medium |
 | Priority | Medium |
 | Support level | Level 1 |
-| Requester | Fictional employee user |
+| Requester | Employee User |
 | Assigned technician | Service Desk Technician |
+| Affected account | `test.username` |
 | Affected workstation | CLIENT01 |
-| Identity server | SRV01 |
+| Active Directory server | SRV01 |
 | Ticketing server | GLPI01 |
+
+---
+
+## Issue Type
+
+This was an Active Directory account lockout incident.
+
+The employee could not sign in to the domain because the account had been locked after several unsuccessful password attempts.
+
+The issue affected one user account and prevented access to the assigned workstation.
 
 ---
 
 ## User Report
 
-The employee reported that several sign-in attempts were rejected and that access to the domain workstation was no longer available.
+> Hi, I’m unable to sign in to my workstation. Windows keeps telling me that my account is locked. I may have entered the wrong password a few times. Can someone please help me regain access? Thanks.
 
-```text
-I attempted to sign in to my domain account several times, but Windows
-continued rejecting my credentials. I am now unable to access the
-workstation.
-
-Please verify whether my account is locked and restore access.
-```
+![Ticket submitted](images/INC-001-01-ticket-submitted.png)
 
 ---
 
@@ -37,70 +44,95 @@ Please verify whether my account is locked and restore access.
 
 | System | Purpose |
 |---|---|
-| `CLIENT01` | Domain workstation where the sign-in failure occurred |
-| `SRV01` | Active Directory server used to verify and unlock the account |
-| `GLPI01` | GLPI server used to record and manage the incident |
+| `CLIENT01` | Domain-joined workstation where the sign-in issue occurred |
+| `SRV01` | Active Directory Domain Services server |
+| `GLPI01` | GLPI ticketing server |
 
 ---
 
 ## Account Lockout Policy
 
-| Policy setting | Configured value |
+An Active Directory account lockout policy was configured for the lab environment.
+
+| Policy setting | Value |
 |---|---:|
-| Account lockout threshold | 5 invalid attempts |
-| Account lockout observation window | 10 minutes |
+| Account lockout threshold | 5 invalid sign-in attempts |
 | Account lockout duration | 30 minutes |
+| Reset account lockout counter after | 10 minutes |
+
+The policy was used to reproduce a realistic account lockout incident.
 
 ---
 
-## Incident Timeline
+## Incident Reproduction
 
-| Step | Action | Result |
-|---:|---|---|
-| 1 | Employee attempted to sign in using incorrect credentials | Sign-in failed |
-| 2 | Five failed attempts occurred within the observation window | Account locked |
-| 3 | Employee submitted GLPI Ticket #1 | Ticket created |
-| 4 | Ticket assigned to Service Desk Technician | Status changed to Processing |
-| 5 | Active Directory account state checked on SRV01 | Lockout confirmed |
-| 6 | Account unlocked on SRV01 | Lockout removed |
-| 7 | User signed in again on CLIENT01 | Access restored |
-| 8 | Technician follow-up added in GLPI | Investigation documented |
-| 9 | Official solution added | Ticket marked Solved |
-| 10 | Ticket administratively closed | Final status Closed |
+The employee account was intentionally locked by entering an incorrect password several times on `CLIENT01`.
+
+After the lockout threshold was reached, Windows prevented further sign-in attempts and displayed an account lockout message.
+
+The employee then submitted the incident through GLPI.
+
+---
+
+## Technician Acknowledgement
+
+The ticket was assigned to the Service Desk Technician and moved to `Processing`.
+
+> Hi, I’ve received your ticket. I’ll check the account status in Active Directory and confirm whether it has been locked. I’ll update you once I’ve restored access.
+
+![Ticket assigned](images/INC-001-02-ticket-assigned.png)
 
 ---
 
 ## Investigation
 
-The technician checked Active Directory for locked user accounts using:
+The account lockout state was checked on `SRV01` using Active Directory PowerShell:
 
 ```powershell
 Search-ADAccount -LockedOut -UsersOnly |
 Select-Object Name, SamAccountName
 ```
 
-The affected test account appeared in the results, confirming that it was locked.
+The result showed that the employee account was listed as locked.
 
-![Active Directory lockout confirmed](images/INC-001-03-account-lockout-confirmed.png)
+```text
+SamAccountName : test.username
+Account state  : Locked
+```
+
+This confirmed that the sign-in issue was caused by the Active Directory account lockout policy.
+
+![Account lockout confirmed](images/INC-001-03-account-lockout-confirmed.png)
+
+---
+
+## Root Cause
+
+The employee entered an incorrect password several times.
+
+After five failed sign-in attempts, Active Directory applied the configured lockout policy and blocked further authentication attempts.
+
+```text
+Repeated incorrect password attempts
+              ↓
+Lockout threshold reached
+              ↓
+Active Directory account locked
+              ↓
+Employee unable to sign in
+```
 
 ---
 
 ## Remediation
 
-The affected account was unlocked on `SRV01` using:
+The account was unlocked on `SRV01` using:
 
 ```powershell
-Unlock-ADAccount -Identity "REDACTED-TEST-USER"
+Unlock-ADAccount -Identity "test.username"
 ```
 
-The technician checked the locked-account list again:
-
-```powershell
-Search-ADAccount -LockedOut -UsersOnly |
-Select-Object Name, SamAccountName
-```
-
-The account no longer appeared in the results.
+The account state was checked again to confirm that it was no longer listed as locked.
 
 ![Account unlocked](images/INC-001-04-account-unlocked.png)
 
@@ -108,53 +140,74 @@ The account no longer appeared in the results.
 
 ## Validation
 
-The employee signed in successfully to `CLIENT01` using the existing password.
+The employee returned to `CLIENT01` and signed in using the existing password.
 
-No password reset was required.
+The sign-in completed successfully, confirming that the account was active and accessible again.
 
-| Validation check | Result |
-|---|---|
-| Account appeared in locked-account search | Confirmed |
-| Unlock command completed | Confirmed |
-| Account disappeared from locked-account search | Confirmed |
-| User signed in using existing password | Successful |
-| Access restored | Yes |
-
-![Successful user sign-in](images/INC-001-05-user-sign-in-validated.png)
+![User sign-in validated](images/INC-001-05-user-sign-in-validated.png)
 
 ---
 
-## Technician Follow-Up
+## Technician Update
 
-```text
-Active Directory investigation confirmed that the user account was
-locked after multiple invalid sign-in attempts. The account was
-unlocked on SRV01. The user successfully signed in to CLIENT01 using
-the existing password. No password reset was required.
-```
+> Hi, I confirmed that your account was locked after several unsuccessful sign-in attempts. I unlocked the account in Active Directory and verified that it is available again. Please try signing in using your current password.
 
 ![Technician follow-up](images/INC-001-06-technician-follow-up.png)
 
 ---
 
-## Solution
+## Official Solution
 
-```text
-The user account was confirmed locked in Active Directory after repeated
-invalid sign-in attempts. The account was unlocked on SRV01 using Active
-Directory administrative tools. Successful sign-in was validated on
-CLIENT01 using the existing password. No password reset was required.
-```
+> The employee account was confirmed as locked in Active Directory. The account was unlocked, and successful workstation sign-in was verified using the employee’s existing password.
+
+The ticket status was changed to `Solved`.
 
 ![Ticket solved](images/INC-001-07-ticket-solved.png)
 
 ---
 
-## Root Cause
+## User Confirmation
 
-The employee entered an incorrect password five times within the configured ten-minute observation window.
+The employee confirmed that access to the workstation had been restored.
 
-The Active Directory account-lockout threshold was reached, causing the account to be temporarily blocked.
+> I was able to sign in again using my password. Everything is working now. Thank you.
+
+The solution was accepted, and the ticket status changed to `Closed`.
+
+![Ticket closed](images/INC-001-08-ticket-closed.png)
+
+---
+
+## Validation Results
+
+| Validation check | Result |
+|---|---|
+| Account lockout reproduced | Passed |
+| Locked account identified in Active Directory | Passed |
+| Correct user account verified | Passed |
+| Account unlocked successfully | Passed |
+| Existing password remained valid | Passed |
+| Workstation sign-in completed | Passed |
+| Employee confirmed restored access | Passed |
+| Technician update recorded | Passed |
+| Official solution recorded | Passed |
+| Ticket closed | Passed |
+
+---
+
+## Ticket Timeline
+
+| Step | Action | Result |
+|---:|---|---|
+| 1 | Employee entered an incorrect password several times | Lockout threshold reached |
+| 2 | Active Directory locked the account | Sign-in blocked |
+| 3 | Employee submitted Ticket #1 | Incident recorded |
+| 4 | Technician accepted and acknowledged the ticket | Ticket moved to Processing |
+| 5 | Locked accounts were reviewed on SRV01 | Employee account identified |
+| 6 | Account was unlocked | Authentication access restored |
+| 7 | Employee tested the existing password | Sign-in succeeded |
+| 8 | Technician recorded the solution | Ticket moved to Solved |
+| 9 | Employee confirmed restored access | Ticket closed |
 
 ---
 
@@ -163,61 +216,66 @@ The Active Directory account-lockout threshold was reached, causing the account 
 | Closure check | Result |
 |---|---|
 | Incident investigated | Yes |
+| Root cause identified | Yes |
 | Account unlocked | Yes |
-| Existing password retained | Yes |
-| Successful sign-in verified | Yes |
+| Password reset required | No |
+| Workstation access restored | Yes |
+| User validation completed | Yes |
 | Technician update recorded | Yes |
-| Solution recorded | Yes |
+| Official solution recorded | Yes |
 | Ticket closed | Yes |
-
-![Ticket closed](images/INC-001-08-ticket-closed.png)
 
 ---
 
-## Evidence
+## How the Issue Was Resolved
 
-### Ticket submitted
+The employee reported that Windows showed an account lockout message and prevented access to the workstation.
 
-![Ticket submitted](images/INC-001-01-ticket-submitted.png)
+I checked Active Directory on `SRV01` and confirmed that the account `test.username` was locked. The lockout occurred after the configured threshold of unsuccessful password attempts was reached.
 
-### Ticket assigned
+I unlocked the account using `Unlock-ADAccount` and checked the account state again. The employee then signed in to `CLIENT01` using the existing password.
 
-![Ticket assigned](images/INC-001-02-ticket-assigned.png)
+The sign-in completed successfully, and the employee confirmed that workstation access was restored.
 
-### Account lockout confirmed
+---
 
-![Account lockout confirmed](images/INC-001-03-account-lockout-confirmed.png)
+## Technician Insight
 
-### Account unlocked
+I first verified the account state in Active Directory instead of immediately resetting the password. The account was locked, but there was no indication that the password itself needed to be changed.
 
-![Account unlocked](images/INC-001-04-account-unlocked.png)
+Unlocking the account allowed the employee to continue using the existing password and avoided an unnecessary password reset.
 
-### User sign-in validated
+After unlocking the account, I asked the employee to test the sign-in before closing the ticket. This confirmed that the original issue had been fully resolved.
 
-![User sign-in validated](images/INC-001-05-user-sign-in-validated.png)
+---
 
-### Technician follow-up
+## Evidence Files
 
-![Technician follow-up](images/INC-001-06-technician-follow-up.png)
-
-### Ticket solved
-
-![Ticket solved](images/INC-001-07-ticket-solved.png)
-
-### Ticket closed
-
-![Ticket closed](images/INC-001-08-ticket-closed.png)
+```text
+images/INC-001-01-ticket-submitted.png
+images/INC-001-02-ticket-assigned.png
+images/INC-001-03-account-lockout-confirmed.png
+images/INC-001-04-account-unlocked.png
+images/INC-001-05-user-sign-in-validated.png
+images/INC-001-06-technician-follow-up.png
+images/INC-001-07-ticket-solved.png
+images/INC-001-08-ticket-closed.png
+```
 
 ---
 
 ## Final Status
 
 ```text
-Portfolio ID    : INC-001
-GLPI Ticket ID  : #1
-Incident        : Active Directory Account Lockout
-Access restored : Yes
-Password reset  : No
-Final status    : CLOSED
+Portfolio ID       : INC-001
+GLPI Ticket ID     : #1
+Ticket type        : Incident
+Issue              : Active Directory Account Lockout
+Affected account   : test.username
+Root cause         : Lockout threshold reached
+Password reset     : Not required
+Account unlocked   : Yes
+Access restored    : Yes
+User confirmed     : Yes
+Final status       : CLOSED
 ```
-
