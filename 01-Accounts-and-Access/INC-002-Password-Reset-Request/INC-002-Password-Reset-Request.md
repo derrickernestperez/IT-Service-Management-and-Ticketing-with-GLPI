@@ -13,19 +13,30 @@
 | Impact | Medium |
 | Priority | Medium |
 | Support level | Level 1 |
-| Requester | Fictional employee user |
+| Requester | Employee User |
 | Assigned technician | Service Desk Technician |
+| Affected account | `john.smith` |
 | Affected workstation | CLIENT01 |
-| Identity server | SRV01 |
+| Active Directory server | SRV01 |
 | Ticketing server | GLPI01 |
 
 ---
 
-## User Request
+## Issue Type
+
+This was an Active Directory password reset service request.
+
+The employee could not sign in because the current password had been forgotten.
+
+The request affected one employee account and required a secure temporary password followed by a mandatory password change at the next sign-in.
+
+---
+
+## User Report
 
 > Hi, I forgot my password and I can’t sign in to my workstation. I tried the passwords I usually use, but none of them worked. Can you please help me reset it? Thanks.
 
-![Password reset request submitted](images/INC-002-01-request-submitted.png)
+![Request submitted](images/INC-002-01-request-submitted.png)
 
 ---
 
@@ -33,9 +44,9 @@
 
 | System | Purpose |
 |---|---|
-| `CLIENT01` | Workstation used to test the temporary and new passwords |
-| `SRV01` | Active Directory server where the account password was reset |
-| `GLPI01` | Ticketing server used to manage the request |
+| `CLIENT01` | Domain-joined workstation used by the employee |
+| `SRV01` | Active Directory Domain Services server |
+| `GLPI01` | GLPI ticketing server |
 
 ---
 
@@ -43,9 +54,7 @@
 
 The request was assigned to the Service Desk Technician and moved to `Processing`.
 
-> Hi, I received your password reset request. Before I make any changes, I need to verify that I’m working on the correct account. Once verified, I’ll reset the password and provide the temporary password through an approved secure channel.
-
-No password was written in the GLPI ticket.
+> Hi, I’ve received your password reset request. I’ll verify the account status in Active Directory before resetting the password. Once completed, you’ll be required to create a new password when you next sign in.
 
 ![Ticket assigned and acknowledged](images/INC-002-02-ticket-assigned-and-acknowledged.png)
 
@@ -53,40 +62,58 @@ No password was written in the GLPI ticket.
 
 ## Account Verification
 
-Before resetting the password, the technician verified the account on `SRV01`.
+Before resetting the password, the employee account was checked on `SRV01`:
 
 ```powershell
-Get-ADUser -Identity "REDACTED-TEST-USER" `
+Get-ADUser -Identity "john.smith" `
   -Properties Enabled, LockedOut, PasswordExpired, PasswordLastSet |
 Select-Object Name, SamAccountName, Enabled, LockedOut, PasswordExpired, PasswordLastSet
 ```
 
-The review confirmed:
+The account state showed:
 
-| Check | Result |
-|---|---|
-| Correct account selected | Confirmed |
-| Account enabled | Yes |
-| Account locked | No |
-| Password reset required | Yes |
+```text
+Account enabled : True
+Account locked  : False
+```
+
+This confirmed that the account was active and that the issue was not caused by an account lockout or disabled account.
 
 ![Account state verified](images/INC-002-03-account-state-verified.png)
 
 ---
 
-## Password Reset
+## Root Cause
 
-A temporary password was entered securely without displaying or storing it in plain text.
+The employee had forgotten the current domain password.
+
+The account was active and not locked, but the employee could not provide the correct password needed for authentication.
+
+```text
+Current password forgotten
+            ↓
+Authentication unsuccessful
+            ↓
+Employee unable to sign in
+            ↓
+Secure password reset required
+```
+
+---
+
+## Remediation
+
+A secure temporary password was entered using PowerShell without displaying it in plain text:
 
 ```powershell
 $newPassword = Read-Host "Enter temporary password" -AsSecureString
 ```
 
-The account password was reset:
+The Active Directory password was reset:
 
 ```powershell
 Set-ADAccountPassword `
-  -Identity "REDACTED-TEST-USER" `
+  -Identity "john.smith" `
   -Reset `
   -NewPassword $newPassword
 ```
@@ -95,25 +122,44 @@ The account was configured to require a password change at the next sign-in:
 
 ```powershell
 Set-ADUser `
-  -Identity "REDACTED-TEST-USER" `
+  -Identity "john.smith" `
   -ChangePasswordAtLogon $true
 ```
 
-The temporary password was not added to GLPI, GitHub, screenshots, or documentation.
+The temporary password was not included in GLPI, GitHub, screenshots, or documentation.
 
 ![Password reset completed](images/INC-002-04-password-reset-completed.png)
 
 ---
 
-## Password Change at Sign-In
+## Password Change Requirement
 
-The employee signed in to `CLIENT01` using the temporary password.
+The employee attempted to sign in to `CLIENT01` using the temporary password.
 
-Windows required the employee to create a new permanent password before continuing.
+Windows required the employee to create a new private password before access was granted.
 
 ![Password change required](images/INC-002-05-password-change-required.png)
 
-The employee created a new password and successfully opened the Windows desktop.
+The employee entered:
+
+1. The temporary password.
+2. A new private password.
+3. The new private password again for confirmation.
+
+The final employee-selected password was not recorded by the technician.
+
+---
+
+## Validation
+
+After changing the password, the employee signed in to `CLIENT01` using the new password.
+
+The sign-in completed successfully, confirming that:
+
+- The password reset was successful.
+- The mandatory password change worked.
+- The employee could access the workstation.
+- The temporary password was no longer required.
 
 ![New password sign-in validated](images/INC-002-06-new-password-sign-in-validated.png)
 
@@ -121,13 +167,15 @@ The employee created a new password and successfully opened the Windows desktop.
 
 ## Technician Update
 
-> Hi, the password has been reset and a temporary password was provided through a secure channel. The user was required to create a new password during the next sign-in. The new password was accepted successfully, and workstation access has been restored.
+> Hi, your password has been reset successfully. Please sign in using the temporary password provided through the approved secure method. Windows will ask you to create a new private password before opening the desktop.
 
 ---
 
-## Solution
+## Official Solution
 
-> The Active Directory password was reset on SRV01. The user signed in to CLIENT01 using the temporary password, created a new permanent password, and successfully accessed the workstation. No further issue was reported.
+> The Active Directory password for the employee account was reset securely. The account was configured to require a password change at the next sign-in. The employee created a new private password and successfully accessed the workstation.
+
+The ticket status was changed to `Solved`.
 
 ![Ticket solved](images/INC-002-07-ticket-solved.png)
 
@@ -135,27 +183,32 @@ The employee created a new password and successfully opened the Windows desktop.
 
 ## User Confirmation
 
-The employee confirmed that the password change was completed and workstation access was restored.
+The employee confirmed that the password change and workstation sign-in were successful.
 
-> I was able to change the temporary password and sign in to my workstation. Everything is working now. Thank you.
+> I changed the temporary password and was able to sign in using my new password. Everything is working now. Thank you.
 
 ![User confirmation](images/INC-002-08-user-confirmation.png)
 
+The solution was accepted, and the ticket status changed to `Closed`.
+
+![Ticket closed](images/INC-002-09-ticket-closed.png)
+
 ---
 
-## Validation
+## Validation Results
 
 | Validation check | Result |
 |---|---|
-| Account identity verified before reset | Passed |
-| Account confirmed enabled | Passed |
-| Account confirmed not locked | Passed |
+| Employee account identified | Passed |
+| Account enabled state confirmed | Passed |
+| Account lockout state checked | Passed |
 | Temporary password created securely | Passed |
-| Password reset completed | Passed |
-| Password change required at next sign-in | Passed |
-| Employee created a new password | Passed |
-| Successful workstation sign-in verified | Passed |
-| Passwords excluded from the ticket | Passed |
+| Active Directory password reset | Passed |
+| Password change at next sign-in enabled | Passed |
+| Employee created a new private password | Passed |
+| Workstation sign-in completed | Passed |
+| Sensitive password values excluded from documentation | Passed |
+| Employee confirmed restored access | Passed |
 | Ticket closed | Passed |
 
 ---
@@ -164,17 +217,18 @@ The employee confirmed that the password change was completed and workstation ac
 
 | Step | Action | Result |
 |---:|---|---|
-| 1 | Employee submitted a password-reset request | Ticket #2 created |
-| 2 | Request assigned to Service Desk Technician | Status changed to Processing |
-| 3 | Account state verified on SRV01 | Correct active account confirmed |
-| 4 | Temporary password created securely | Password not exposed |
-| 5 | Active Directory password reset | Reset completed |
-| 6 | Password change required at next sign-in | Policy applied |
-| 7 | Employee signed in using temporary password | Password-change screen displayed |
-| 8 | Employee created a permanent password | Password accepted |
-| 9 | Successful access validated on CLIENT01 | Workstation access restored |
-| 10 | Technician added the solution | Status changed to Solved |
-| 11 | Request administratively closed | Final status Closed |
+| 1 | Employee forgot the current password | Workstation sign-in unavailable |
+| 2 | Employee submitted Ticket #2 | Service request recorded |
+| 3 | Technician accepted and acknowledged the request | Ticket moved to Processing |
+| 4 | Employee account status checked | Account active and not locked |
+| 5 | Temporary password created securely | Password value protected |
+| 6 | Active Directory password reset | Temporary credentials assigned |
+| 7 | Password change at next sign-in enabled | Security requirement applied |
+| 8 | Employee signed in using the temporary password | Password change prompt displayed |
+| 9 | Employee created a new private password | Temporary password replaced |
+| 10 | Employee signed in successfully | Workstation access restored |
+| 11 | Technician recorded the solution | Ticket moved to Solved |
+| 12 | Employee confirmed the fix | Ticket closed |
 
 ---
 
@@ -182,27 +236,38 @@ The employee confirmed that the password change was completed and workstation ac
 
 | Closure check | Result |
 |---|---|
-| Request reviewed | Yes |
-| Identity verified | Yes |
-| Password reset completed | Yes |
+| Request verified | Yes |
+| Account status reviewed | Yes |
+| Password reset securely | Yes |
+| Mandatory password change applied | Yes |
 | Temporary password protected | Yes |
-| Permanent password created by employee | Yes |
+| Employee created a private password | Yes |
 | Workstation access restored | Yes |
-| Technician update recorded | Yes |
-| Solution recorded | Yes |
+| User validation completed | Yes |
+| Official solution recorded | Yes |
 | Ticket closed | Yes |
 
-![Ticket closed](images/INC-002-09-ticket-closed.png)
+---
+
+## How the Issue Was Resolved
+
+The employee reported being unable to sign in because the current password had been forgotten.
+
+I checked the account `john.smith` in Active Directory and confirmed that it was enabled and not locked. This showed that the issue required a password reset rather than an account unlock.
+
+I created a secure temporary password, reset the account password, and enabled the requirement to change the password at the next sign-in.
+
+The employee signed in using the temporary password, created a new private password, and successfully accessed `CLIENT01`. The employee then confirmed that the account was working normally.
 
 ---
 
 ## Technician Insight
 
-I verified the account before resetting anything because I wanted to make sure I was working on the correct user and that the issue was not caused by a lockout or disabled account.
+I checked the account status before resetting the password to make sure the sign-in problem was not caused by a disabled or locked account.
 
-I used a secure PowerShell prompt so the temporary password would not appear in the command history. I also required the user to change it during the next sign-in instead of allowing the temporary password to remain active.
+The temporary password was entered securely and was never included in the ticket, screenshots, or repository. I also required the employee to change it during the next sign-in so that only the employee knew the final password.
 
-After the user created a new password and successfully opened the workstation, I updated the ticket and closed the request. I did not place either password in GLPI or in the documentation.
+I closed the request only after the employee created a new password and confirmed successful access to the workstation.
 
 ---
 
@@ -225,11 +290,16 @@ images/INC-002-09-ticket-closed.png
 ## Final Status
 
 ```text
-Portfolio ID       : INC-002
-GLPI Ticket ID     : #2
-Request            : Password Reset
-Password reset     : Completed
-Password exposed   : No
-Access restored    : Yes
-Final status       : CLOSED
+Portfolio ID             : INC-002
+GLPI Ticket ID           : #2
+Ticket type              : Service Request
+Request                  : Password Reset
+Affected account         : john.smith
+Account enabled          : Yes
+Account locked           : No
+Password reset completed : Yes
+Password change required : Yes
+Workstation access       : Restored
+User confirmed           : Yes
+Final status             : CLOSED
 ```
